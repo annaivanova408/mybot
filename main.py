@@ -7,13 +7,15 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, WebAppInfo
 
-API_TOKEN = "8289052007:AAHNUl-TnZcCXf65pT6gqnyQH5c3-JKzHfs"  # вставь сюда токен бота
-BASE_WEBAPP_URL = "https://mybot-1wt.pages.dev/code.html"  # твой Cloudflare Pages
+API_TOKEN = "8289052007:AAHNUl-TnZcCXf65pT6gqnyQH5c3-JKzHfs"  # 🔹 вставь сюда токен бота
+BASE_WEBAPP_URL = "https://mybot-1wt.pages.dev/code.html"  # 🔹 твой Cloudflare Pages URL
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
-# ---------- База данных ----------
+# =========================
+#   БАЗА ДАННЫХ
+# =========================
 
 def init_db():
     db = sqlite3.connect("results.db")
@@ -51,12 +53,19 @@ def insert_result(user_id: int, choice: str):
     print(user_id, price_up, price_down)
 
 
-# ---------- Кнопка WebApp ----------
+# =========================
+#   WEBAPP-КНОПКА
+# =========================
 
 def build_webapp_url(user_id: int) -> str:
-    """Генерируем параметры для мини-аппа."""
+    """
+    Собираем URL для мини-аппа:
+    - phi: параметр AR(1), если захочешь использовать его в будущем
+    - uid: id пользователя
+    - v: случайное число, чтобы Телега не кэшировала старую страницу
+    """
     phi = random.choice([0.3, 0.5, 0.7])
-    v = random.randint(0, 10**9)  # чтобы Телега не кэшировала старую версию
+    v = random.randint(0, 10**9)
     params = urllib.parse.urlencode({"phi": phi, "uid": user_id, "v": v})
     return f"{BASE_WEBAPP_URL}?{params}"
 
@@ -73,7 +82,9 @@ def get_webapp_keyboard(user_id: int) -> ReplyKeyboardMarkup:
     )
 
 
-# ---------- Хэндлеры ----------
+# =========================
+#   ХЭНДЛЕРЫ
+# =========================
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
@@ -94,7 +105,9 @@ async def web_app_data_handler(message: types.Message):
     await message.answer(f"Ты нажал: {data}")
 
 
-# ---------- Запуск бота ----------
+# =========================
+#   ЗАПУСК БОТА
+# =========================
 
 async def main():
     print("Бот запустился...")
