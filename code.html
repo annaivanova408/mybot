@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <title>AR(1) график</title>
+  <title>Прогноз точки</title>
   <style>
     body {
       margin: 0;
@@ -19,41 +19,28 @@
       max-width: 90vw;
       max-height: 50vh;
       background: #fff;
-      margin-bottom: 20px;
+      margin-bottom: 12px;
       border-radius: 8px;
     }
-    button {
-      width: 80%;
-      padding: 12px 16px;
-      margin: 6px;
-      font-size: 16px;
-      font-weight: 600;
-      border: none;
-      border-radius: 10px;
-      cursor: pointer;
+    .hint {
+      font-size: 14px;
+      color: #ccc;
+      text-align: center;
+      padding: 0 16px 8px;
     }
-    .up    { background: #2ecc71; color: #fff; }
-    .down  { background: #e74c3c; color: #fff; }
-    .send  { background: #3498db; color: #fff; margin-top: 12px; }
-    .hint  { font-size: 14px; color: #ccc; margin-bottom: 8px; }
   </style>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
   <canvas id="plot" width="800" height="400"></canvas>
-
-  <div class="hint" id="status">Сделай выбор и при желании обновляй график, потом нажми «Отправить ответ».</div>
-
-  <button class="up"   onclick="onChoice(1)">Цена растёт 📈</button>
-  <button class="down" onclick="onChoice(0)">Цена падает 📉</button>
-  <button class="send" onclick="sendAnswer()">Отправить ответ ✅</button>
+  <div class="hint" id="status">
+    Кликни по вертикальной линии справа, где, по твоему мнению, будет следующая точка ряда.
+  </div>
 
   <script>
     // читаем параметр phi из URL, например ?phi=0.7
     const params = new URLSearchParams(window.location.search);
     const phi = parseFloat(params.get("phi")) || 0.5;
-
-    let lastChoice = null; // 1 или 0
 
     // генератор нормального распределения (Box–Muller)
     function randn() {
@@ -72,21 +59,44 @@
       return X;
     }
 
-    const n = 100;
+    const n = 100;          // количество фактических точек
     const sigma = 0.5;
+    const data = generateAR1(n, phi, sigma);
+
     const canvas = document.getElementById("plot");
     const ctx = canvas.getContext("2d");
+    const statusDiv = document.getElementById("status");
 
-    function drawSeries(data) {
-      const min = Math.min(...data);
-      const max = Math.max(...data);
-      const pad = 30;
+    const pad = 30;
+    const W = canvas.width - 2 * pad;
+    const H = canvas.height - 2 * pad;
 
-      function yScale(v) {
-        if (max === min) return canvas.height / 2;
-        return pad + (canvas.height - 2*pad) * (1 - (v - min) / (max - min));
-      }
+    const min = Math.min(...data);
+    const max = Math.max(...data);
 
+    // шкалы
+    function yScale(v) {
+      if (max === min) return canvas.height / 2;
+      return pad + H * (1 - (v - min) / (max - min));
+    }
+
+    function invYScale(y) {
+      // обратное преобразование: пиксели -> значение ряда
+      const ratio = (y - pad) / H;
+      const clamped = Math.min(1, Math.max(0, ratio));
+      return min + (1 - clamped) * (max - min);
+    }
+
+    function xCoord(i, total) {
+      // i = 0..total, total = n (последняя фактическая точка — i=n-1, прогноз — i=n)
+      return pad + W * (i / total);
+    }
+
+    const predIndex = n;  // индекс точки прогноза (следующий период)
+    const xPred = xCoord(predIndex, n); // x-координата линии прогноза
+    const lastValue = data[data.length - 1];
+
+    function drawSeries(highlightPoint) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       // ось X
@@ -97,50 +107,75 @@
       ctx.lineTo(canvas.width - pad, canvas.height - pad);
       ctx.stroke();
 
-      // линия процесса
-      ctx.strokeStyle = "#f1a520";
+      // линия процесса (0..n-1)
+      ctx.strokeStyle = "#5555ff";
       ctx.lineWidth = 2;
       ctx.beginPath();
-      for (let i = 0; i < data.length; i++) {
-        const x = pad + (canvas.width - 2*pad) * (i / (data.length - 1));
+      for (let i = 0; i < n; i++) {
+        const x = xCoord(i, n);
         const y = yScale(data[i]);
         if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
       }
       ctx.stroke();
 
-      // подпись про phi
-      ctx.fillStyle = "#000";
-      ctx.font = "20px system-ui";
-      ctx.fillText("AR(1), φ = " + phi.toFixed(2), pad, pad);
-    }
+      // вертикальная линия для точки прогноза
+      ctx.strokeStyle = "#999";
+      ctx.setLineDash([5, 5]);
+      ctx.beginPath();
+      ctx.moveTo(xPred, pad);
+      ctx.lineTo(xPred, canvas.height - pad);
+      ctx.stroke();
+      ctx.setLineDash([]);
 
-    function regeneratePlot() {
-      const data = generateAR1(n, phi, sigma);
-      drawSeries(data);
+      // подпись
+      ctx.fillStyle = "#000";
+      ctx.font = "18px system-ui";
+      ctx.fillText("AR(1), φ = " + phi.toFixed(2), pad, pad - 8);
+
+      ctx.font = "14px system-ui";
+      ctx.fillText("Кликни здесь →", xPred - 90, pad + 20);
+
+      // если есть точка прогноза для подсветки
+      if (highlightPoint) {
+        const { x, y, up } = highlightPoint;
+        ctx.fillStyle = up ? "#2ecc71" : "#e74c3c";
+        ctx.beginPath();
+        ctx.arc(x, y, 6, 0, 2 * Math.PI);
+        ctx.fill();
+      }
     }
 
     // первый рендер
-    regeneratePlot();
+    drawSeries(null);
 
-    function onChoice(val) {
-      lastChoice = val;
-      const status = document.getElementById("status");
-      status.textContent = val === 1
-        ? "Вы выбрали: Цена растёт 📈. Можешь обновить график или отправить ответ."
-        : "Вы выбрали: Цена падает 📉. Можешь обновить график или отправить ответ.";
-      // обновляем график под новый шум
-      regeneratePlot();
-    }
+    canvas.addEventListener("click", function (evt) {
+      const rect = canvas.getBoundingClientRect();
+      const x = evt.clientX - rect.left;
+      const y = evt.clientY - rect.top;
 
-    function sendAnswer() {
-      if (lastChoice === null) {
-        const status = document.getElementById("status");
-        status.textContent = "Сначала выбери вариант (📈 или 📉), потом отправляй ответ.";
+      // проверяем, что кликнули достаточно близко к линии прогноза
+      const tolerance = 30; // пиксели
+      if (Math.abs(x - xPred) > tolerance) {
+        statusDiv.textContent = "Пожалуйста, кликни по вертикальной линии справа (следующая точка).";
         return;
       }
-      Telegram.WebApp.sendData(lastChoice.toString());
+
+      // переводим пиксельную координату в "значение" и сравниваем с последней точкой
+      const predictedValue = invYScale(y);
+      const up = predictedValue > lastValue; // true = рост
+
+      // перерисовываем график с подсветкой точки
+      drawSeries({ x: xPred, y: y, up });
+
+      statusDiv.textContent = up
+        ? "Ты ожидаешь рост цены 📈"
+        : "Ты ожидаешь падение цены 📉";
+
+      // отправляем только направление (1 = вверх, 0 = вниз)
+      const answer = up ? "1" : "0";
+      Telegram.WebApp.sendData(answer);
       // после этого мини-апп закроется по правилам Telegram
-    }
+    });
   </script>
 </body>
 </html>
