@@ -24,29 +24,36 @@
     }
     button {
       width: 80%;
-      padding: 16px;
-      margin: 10px;
-      font-size: 18px;
+      padding: 12px 16px;
+      margin: 6px;
+      font-size: 16px;
       font-weight: 600;
       border: none;
       border-radius: 10px;
       cursor: pointer;
     }
-    .up { background: #2ecc71; color: #fff; }
-    .down { background: #e74c3c; color: #fff; }
+    .up    { background: #2ecc71; color: #fff; }
+    .down  { background: #e74c3c; color: #fff; }
+    .send  { background: #3498db; color: #fff; margin-top: 12px; }
+    .hint  { font-size: 14px; color: #ccc; margin-bottom: 8px; }
   </style>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
   <canvas id="plot" width="800" height="400"></canvas>
 
-  <button class="up" onclick="sendValue(1)">Цена растёт 📈</button>
-  <button class="down" onclick="sendValue(0)">Цена падает 📉</button>
+  <div class="hint" id="status">Сделай выбор и при желании обновляй график, потом нажми «Отправить ответ».</div>
+
+  <button class="up"   onclick="onChoice(1)">Цена растёт 📈</button>
+  <button class="down" onclick="onChoice(0)">Цена падает 📉</button>
+  <button class="send" onclick="sendAnswer()">Отправить ответ ✅</button>
 
   <script>
     // читаем параметр phi из URL, например ?phi=0.7
     const params = new URLSearchParams(window.location.search);
     const phi = parseFloat(params.get("phi")) || 0.5;
+
+    let lastChoice = null; // 1 или 0
 
     // генератор нормального распределения (Box–Muller)
     function randn() {
@@ -67,48 +74,72 @@
 
     const n = 100;
     const sigma = 0.5;
-    const data = generateAR1(n, phi, sigma);
-
     const canvas = document.getElementById("plot");
     const ctx = canvas.getContext("2d");
 
-    const min = Math.min(...data);
-    const max = Math.max(...data);
-    const pad = 30;
+    function drawSeries(data) {
+      const min = Math.min(...data);
+      const max = Math.max(...data);
+      const pad = 30;
 
-    function yScale(v) {
-      if (max === min) return canvas.height / 2;
-      return pad + (canvas.height - 2*pad) * (1 - (v - min) / (max - min));
+      function yScale(v) {
+        if (max === min) return canvas.height / 2;
+        return pad + (canvas.height - 2*pad) * (1 - (v - min) / (max - min));
+      }
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // ось X
+      ctx.strokeStyle = "#ccc";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(pad, canvas.height - pad);
+      ctx.lineTo(canvas.width - pad, canvas.height - pad);
+      ctx.stroke();
+
+      // линия процесса
+      ctx.strokeStyle = "#f1a520";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let i = 0; i < data.length; i++) {
+        const x = pad + (canvas.width - 2*pad) * (i / (data.length - 1));
+        const y = yScale(data[i]);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+
+      // подпись про phi
+      ctx.fillStyle = "#000";
+      ctx.font = "20px system-ui";
+      ctx.fillText("AR(1), φ = " + phi.toFixed(2), pad, pad);
     }
 
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // ось X
-    ctx.strokeStyle = "#ccc";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(pad, canvas.height - pad);
-    ctx.lineTo(canvas.width - pad, canvas.height - pad);
-    ctx.stroke();
-
-    // линия процесса
-    ctx.strokeStyle = "#f1a520";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    for (let i = 0; i < n; i++) {
-      const x = pad + (canvas.width - 2*pad) * (i / (n - 1));
-      const y = yScale(data[i]);
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    function regeneratePlot() {
+      const data = generateAR1(n, phi, sigma);
+      drawSeries(data);
     }
-    ctx.stroke();
 
-    // подпись про phi
-    ctx.fillStyle = "#000";
-    ctx.font = "20px system-ui";
-    ctx.fillText("AR(1), φ = " + phi.toFixed(2), pad, pad);
+    // первый рендер
+    regeneratePlot();
 
-    function sendValue(val) {
-      Telegram.WebApp.sendData(val.toString());
+    function onChoice(val) {
+      lastChoice = val;
+      const status = document.getElementById("status");
+      status.textContent = val === 1
+        ? "Вы выбрали: Цена растёт 📈. Можешь обновить график или отправить ответ."
+        : "Вы выбрали: Цена падает 📉. Можешь обновить график или отправить ответ.";
+      // обновляем график под новый шум
+      regeneratePlot();
+    }
+
+    function sendAnswer() {
+      if (lastChoice === null) {
+        const status = document.getElementById("status");
+        status.textContent = "Сначала выбери вариант (📈 или 📉), потом отправляй ответ.";
+        return;
+      }
+      Telegram.WebApp.sendData(lastChoice.toString());
+      // после этого мини-апп закроется по правилам Telegram
     }
   </script>
 </body>
