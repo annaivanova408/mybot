@@ -7,7 +7,7 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, WebAppInfo
 
-API_TOKEN = ""  # вставь сюда токен бота
+API_TOKEN = "8289052007:AAHNUl-TnZcCXf65pT6gqnyQH5c3-JKzHfs"  # вставь сюда токен бота
 BASE_WEBAPP_URL = "https://mybot-1wt.pages.dev/code.html"  # твой Cloudflare Pages
 
 bot = Bot(token=API_TOKEN)
