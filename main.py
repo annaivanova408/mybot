@@ -7,7 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import random
 
-API_TOKEN = ""
+API_TOKEN = "8289052007:AAHNUl-TnZcCXf65pT6gqnyQH5c3-JKzHfs"
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
