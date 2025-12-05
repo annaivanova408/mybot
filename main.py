@@ -59,7 +59,7 @@ def insert_result(user_id: int, choice: str):
 #кнопка запуска апп и генерация графика
 def get_webapp_keyboard():
     generating_plot()
-    button = KeyboardButton(text="Открыть график", web_app=WebAppInfo(url="https://mybot-1wt.pages.dev/code"))
+    button = KeyboardButton(text="Открыть график", web_app=WebAppInfo(url="https://mybot-1wt.pages.dev/code.html"))
     return ReplyKeyboardMarkup(keyboard=[[button]], resize_keyboard=True) 
 
 
@@ -92,6 +92,7 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
 
 
 
