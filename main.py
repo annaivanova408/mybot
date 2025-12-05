@@ -59,7 +59,7 @@ def insert_result(user_id: int, choice: str):
 #кнопка запуска апп и генерация графика
 def get_webapp_keyboard():
     generating_plot()
-    button = KeyboardButton(text="Открыть график", web_app=WebAppInfo(url="https://andreimit1.github.io/my-photo-webapp/code.html"))
+    button = KeyboardButton(text="Открыть график", web_app=WebAppInfo(url="https://mybot-1wt.pages.dev/code"))
     return ReplyKeyboardMarkup(keyboard=[[button]], resize_keyboard=True) 
 
 
