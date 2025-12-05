@@ -11,32 +11,40 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: flex-start;      /* график прижат к верху */
+      justify-content: flex-start;
       height: 100vh;
       padding-top: 16px;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
     }
+
+    .scroll-wrapper {
+      width: 100vw;                  /* ширина окна */
+      overflow-x: scroll;            /* горизонтальный скролл */
+      overflow-y: hidden;
+      -webkit-overflow-scrolling: touch; /* плавный скролл на iOS */
+      background: #111;
+    }
+
     canvas {
-      width: 95vw;                      /* почти вся ширина экрана */
-      max-width: 1000px;                /* верхний предел по ширине */
-      height: 60vh;                     /* большая часть высоты */
-      max-height: 600px;
+      width: 2000px;                 /* видимая ширина (CSS) */
+      height: 500px;                 /* видимая высота (CSS) */
       background: #fff;
-      margin-bottom: 12px;
+      margin: 0 auto;
+      display: block;
       border-radius: 8px;
       box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
     }
+
     .hint {
       font-size: 14px;
       color: #ccc;
       text-align: center;
-      padding: 0 16px 8px 16px;
+      padding: 12px 16px 8px 16px;
     }
   </style>
 
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script>
-    // Инициализация WebApp
     Telegram.WebApp.ready();
     Telegram.WebApp.expand();
     Telegram.WebApp.setHeaderColor("dark");
@@ -45,10 +53,12 @@
   </script>
 </head>
 <body>
-  <canvas id="plot" width="1000" height="600"></canvas>
+  <div class="scroll-wrapper">
+    <canvas id="plot"></canvas>
+  </div>
 
   <div class="hint" id="status">
-    Кликни по вертикальной линии справа, где, по твоему мнению, будет следующая точка ряда.
+    Пролистай график вправо и кликни по вертикальной линии, где, по твоему мнению, будет следующая точка ряда.
   </div>
 
   <script>
@@ -73,22 +83,26 @@
       return X;
     }
 
-    // --- Данные и базовые объекты ---
+    // --- Данные ---
     const n = 100;          // количество фактических точек
     const sigma = 0.5;
     const data = generateAR1(n, phi, sigma);
+    const lastValue = data[data.length - 1];
 
+    // --- Canvas и размеры ---
     const canvas = document.getElementById("plot");
     const ctx = canvas.getContext("2d");
-    const statusDiv = document.getElementById("status");
 
-    const pad = 40;                             // отступы от краёв
+    // реальные размеры полотна (независимо от CSS)
+    canvas.width  = 2000;   // рисуем большой график
+    canvas.height = 500;
+
+    const pad = 40;
     const W = canvas.width - 2 * pad;
     const H = canvas.height - 2 * pad;
 
     const min = Math.min(...data);
     const max = Math.max(...data);
-    const lastValue = data[data.length - 1];
 
     // --- Шкалы ---
     function yScale(v) {
@@ -107,7 +121,7 @@
       return pad + W * (i / total);
     }
 
-    const predIndex = n;             // индекс точки прогноза (следующий период)
+    const predIndex = n;              // индекс точки прогноза (следующий период)
     const xPred = xCoord(predIndex, n); // x-координата линии прогноза
 
     // --- Рисование ---
@@ -148,7 +162,7 @@
       ctx.fillText("AR(1), φ = " + phi.toFixed(2), pad, pad - 10);
 
       ctx.font = "14px system-ui";
-      ctx.fillText("Кликни здесь →", xPred - 100, pad + 24);
+      ctx.fillText("Кликни здесь →", xPred - 110, pad + 24);
 
       // если есть точка прогноза для подсветки
       if (highlightPoint) {
@@ -163,6 +177,8 @@
     // первый рендер
     drawSeries(null);
 
+    const statusDiv = document.getElementById("status");
+
     // --- Обработка клика пользователя ---
     canvas.addEventListener("click", function (evt) {
       const rect = canvas.getBoundingClientRect();
@@ -172,7 +188,7 @@
       // проверяем, что кликнули достаточно близко к линии прогноза
       const tolerance = 40; // пиксели
       if (Math.abs(x - xPred) > tolerance) {
-        statusDiv.textContent = "Пожалуйста, кликни по вертикальной линии справа (следующая точка).";
+        statusDiv.textContent = "Пожалуйста, пролистай вправо и кликни по вертикальной линии (следующая точка).";
         return;
       }
 
