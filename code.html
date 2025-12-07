@@ -13,21 +13,21 @@
       align-items: center;
       justify-content: flex-start;
       height: 100vh;
-      padding-top: 12px;
+      padding-top: 8px;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
     }
 
     .scroll-wrapper {
-      width: 100vw;                  /* ширина окна */
-      overflow-x: scroll;            /* горизонтальный скролл */
+      width: 100vw;
+      overflow-x: scroll;
       overflow-y: hidden;
-      -webkit-overflow-scrolling: touch; /* плавный скролл на iOS */
+      -webkit-overflow-scrolling: touch;
       background: #111;
     }
 
     canvas {
-      width: 2000px;                 /* ширина графика на экране */
-      height: 500px;                 /* высота графика на экране */
+      width: 2200px;               /* ширина графика на экране */
+      height: 500px;
       background: #fff;
       margin: 0 auto;
       display: block;
@@ -39,18 +39,38 @@
       font-size: 14px;
       color: #ccc;
       text-align: center;
-      padding: 8px 16px 4px 16px;
+      padding: 6px 16px 4px 16px;
       min-height: 40px;
     }
 
     .slider-wrapper {
       width: 100vw;
-      padding: 0 16px 12px 16px;
+      padding: 0 16px 8px 16px;
       box-sizing: border-box;
     }
 
     input[type="range"] {
       width: 100%;
+    }
+
+    .actions {
+      padding-bottom: 10px;
+    }
+
+    .send-btn {
+      padding: 10px 20px;
+      border-radius: 8px;
+      border: none;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      background: #3498db;
+      color: #fff;
+      opacity: 0.4;
+    }
+
+    .send-btn.enabled {
+      opacity: 1;
     }
   </style>
 
@@ -69,17 +89,25 @@
   </div>
 
   <div class="hint" id="status">
-    Пролистай график вправо и кликни по вертикальной линии, где, по твоему мнению, будет следующая точка ряда.
+    Пролистай график вправо и кликни по вертикальной линии, где, по твоему мнению, будет следующая точка ряда (1 из 10).
   </div>
 
   <div class="slider-wrapper">
     <input type="range" id="scrollSlider" min="0" max="100" value="0">
   </div>
 
+  <div class="actions">
+    <button id="sendBtn" class="send-btn" disabled>Отправить результаты</button>
+  </div>
+
   <script>
     // --- Параметры из URL (например, ?phi=0.7) ---
     const params = new URLSearchParams(window.location.search);
     const phi = parseFloat(params.get("phi")) || 0.5;
+
+    const EXTRA_STEPS = 10;      // количество прогнозов
+    const BASE_N = 100;          // длина исходного "исторического" ряда
+    const TOTAL_N = BASE_N + EXTRA_STEPS;
 
     // --- Генератор нормального распределения (Box–Muller) ---
     function randn() {
@@ -99,17 +127,15 @@
     }
 
     // --- Данные ---
-    const n = 100;          // количество фактических точек
     const sigma = 0.5;
-    const data = generateAR1(n, phi, sigma);
-    const lastValue = data[data.length - 1];
+    const data = generateAR1(TOTAL_N, phi, sigma);
 
     // --- Canvas и размеры ---
     const canvas = document.getElementById("plot");
     const ctx = canvas.getContext("2d");
 
     // реальные размеры полотна (в пикселях)
-    canvas.width  = 2000;   // рисуем большой график
+    canvas.width  = 2200;
     canvas.height = 500;
 
     const pad = 40;
@@ -131,18 +157,23 @@
       return min + (1 - clamped) * (max - min);
     }
 
-    function xCoord(i, total) {
-      // i = 0..total, total = n (последняя фактическая точка — i=n-1, прогноз — i=n)
-      return pad + W * (i / total);
+    function xCoord(i) {
+      // i = 0..TOTAL_N
+      return pad + W * (i / TOTAL_N);
     }
 
-    const predIndex = n;              // индекс точки прогноза (следующий период)
-    const xPred = xCoord(predIndex, n); // x-координата линии прогноза
+    // --- Состояние эксперимента ---
+    let currentStep = 0;              // 0..EXTRA_STEPS-1
+    let maxRealIndex = BASE_N - 1;    // последний "открытый" индекс истинного ряда
+    const predictions = [];           // массив всех прогнозов
 
     const statusDiv = document.getElementById("status");
+    const wrapper = document.getElementById("scrollWrapper");
+    const slider = document.getElementById("scrollSlider");
+    const sendBtn = document.getElementById("sendBtn");
 
     // --- Рисование ---
-    function drawSeries(highlightPoint) {
+    function drawSeries() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       // ось X
@@ -153,51 +184,66 @@
       ctx.lineTo(canvas.width - pad, canvas.height - pad);
       ctx.stroke();
 
-      // линия процесса (0..n-1)
+      // истинная линия процесса: рисуем только открытую часть
       ctx.strokeStyle = "#4b6cff";
       ctx.lineWidth = 2;
       ctx.beginPath();
-      for (let i = 0; i < n; i++) {
-        const x = xCoord(i, n);
+      for (let i = 0; i <= maxRealIndex; i++) {
+        const x = xCoord(i);
         const y = yScale(data[i]);
         if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
       }
       ctx.stroke();
 
-      // вертикальная линия для точки прогноза
-      ctx.strokeStyle = "#999";
-      ctx.setLineDash([6, 6]);
-      ctx.beginPath();
-      ctx.moveTo(xPred, pad);
-      ctx.lineTo(xPred, canvas.height - pad);
-      ctx.stroke();
-      ctx.setLineDash([]);
+      // вертикальная линия для текущего прогноза, если ещё есть шаги
+      if (currentStep < EXTRA_STEPS) {
+        const predIndex = BASE_N + currentStep;
+        const xPred = xCoord(predIndex);
 
-      // подписи
+        ctx.strokeStyle = "#999";
+        ctx.setLineDash([6, 6]);
+        ctx.beginPath();
+        ctx.moveTo(xPred, pad);
+        ctx.lineTo(xPred, canvas.height - pad);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = "#000";
+        ctx.font = "14px system-ui";
+        ctx.fillText("Кликни здесь →", xPred - 110, pad + 24);
+      }
+
+      // подпись phi
       ctx.fillStyle = "#000";
       ctx.font = "20px system-ui";
       ctx.fillText("AR(1), φ = " + phi.toFixed(2), pad, pad - 10);
 
-      ctx.font = "14px system-ui";
-      ctx.fillText("Кликни здесь →", xPred - 110, pad + 24);
+      // рисуем все прогнозные крестики
+      for (const p of predictions) {
+        const x = xCoord(p.t);
+        const y = yScale(p.y_pred);
 
-      // если есть точка прогноза для подсветки
-      if (highlightPoint) {
-        const { x, y, up } = highlightPoint;
-        ctx.fillStyle = up ? "#2ecc71" : "#e74c3c";
+        ctx.strokeStyle = "#e67e22";
+        ctx.lineWidth = 2;
+        const size = 7;
         ctx.beginPath();
-        ctx.arc(x, y, 7, 0, 2 * Math.PI);
-        ctx.fill();
+        ctx.moveTo(x - size, y - size);
+        ctx.lineTo(x + size, y + size);
+        ctx.moveTo(x - size, y + size);
+        ctx.lineTo(x + size, y - size);
+        ctx.stroke();
+
+        // при желании можно подписывать шаг
+        ctx.font = "12px system-ui";
+        ctx.fillStyle = "#e67e22";
+        ctx.fillText(`P${p.step+1}`, x + 6, y - 8);
       }
     }
 
     // первый рендер
-    drawSeries(null);
+    drawSeries();
 
     // --- Бегунок <-> скролл ---
-    const wrapper = document.getElementById("scrollWrapper");
-    const slider = document.getElementById("scrollSlider");
-
     function updateSliderFromScroll() {
       const maxScroll = wrapper.scrollWidth - wrapper.clientWidth;
       if (maxScroll <= 0) {
@@ -217,49 +263,82 @@
     slider.addEventListener("input", updateScrollFromSlider);
     wrapper.addEventListener("scroll", updateSliderFromScroll);
 
-    // немножко проскроллим вправо по умолчанию (чтобы студент видел, что график можно двигать)
+    // чуть-чуть сдвигаем вправо при старте, чтобы было видно, что график длинный
     setTimeout(() => {
+      slider.value = 100;
       updateScrollFromSlider();
     }, 300);
 
     // --- Обработка клика пользователя ---
     canvas.addEventListener("click", function (evt) {
+      if (currentStep >= EXTRA_STEPS) {
+        statusDiv.textContent = "Все 10 прогнозов уже сделаны. Можешь отправить результаты.";
+        return;
+      }
+
       const rect = canvas.getBoundingClientRect();
       const x = evt.clientX - rect.left;
       const y = evt.clientY - rect.top;
 
-      // проверяем, что кликнули достаточно близко к линии прогноза
-      const tolerance = 40; // пиксели
+      const predIndex = BASE_N + currentStep;
+      const xPred = xCoord(predIndex);
+
+      const tolerance = 40; // требуем попасть в зону вокруг вертикальной линии
       if (Math.abs(x - xPred) > tolerance) {
         statusDiv.textContent = "Пожалуйста, пролистай вправо и кликни по вертикальной линии (следующая точка).";
         return;
       }
 
-      // переводим пиксельную координату в значение ряда
-      const predictedValue = invYScale(y);
-      const up = predictedValue > lastValue; // true = рост
+      // переводим пиксель в значение
+      const yValue = invYScale(y);
+      const trueValue = data[predIndex];
+      const up = yValue > data[predIndex - 1];   // "ожидается рост?" — относительно предыдущего значения
 
-      // перерисовываем график с подсветкой точки
-      drawSeries({ x: xPred, y, up });
+      // фиксируем, что реальная точка тоже открылась
+      maxRealIndex = predIndex;
 
-      // выводим конкретную "координату" пользователя
-      const tIndex = predIndex; // формально это момент времени t = n
-      statusDiv.textContent = (up
-        ? "Ты ожидаешь рост цены 📈. "
-        : "Ты ожидаешь падение цены 📉. "
-      ) + `Выбрана точка: t = ${tIndex}, y ≈ ${predictedValue.toFixed(2)}.`;
+      predictions.push({
+        step: currentStep,
+        t: predIndex,
+        y_pred: yValue,
+        y_true: trueValue,
+        up: up
+      });
 
-      // в бота по-прежнему отправляем только направление (1 = вверх, 0 = вниз),
-      // чтобы не ломать существующий Python-код
-      //const answer = up ? "1" : "0";
+      currentStep += 1;
+
+      drawSeries();
+
+      if (currentStep < EXTRA_STEPS) {
+        statusDiv.textContent =
+          `Прогноз ${currentStep} сделан. Сейчас t = ${predIndex}, твой y ≈ ${yValue.toFixed(2)}, ` +
+          `истинное y ≈ ${trueValue.toFixed(2)}. Сделай прогноз ${currentStep+1} из ${EXTRA_STEPS}.`;
+      } else {
+        statusDiv.textContent =
+          `Все ${EXTRA_STEPS} прогнозов сделаны. Последняя точка: t = ${predIndex}, ` +
+          `твой y ≈ ${yValue.toFixed(2)}, истинное y ≈ ${trueValue.toFixed(2)}. ` +
+          `Теперь нажми «Отправить результаты».`;
+        sendBtn.disabled = false;
+        sendBtn.classList.add("enabled");
+      }
+    });
+
+    // --- Отправка результатов в бота (один раз, после 10 шагов) ---
+    sendBtn.addEventListener("click", function () {
+      if (predictions.length < EXTRA_STEPS) {
+        statusDiv.textContent = "Сначала сделай все 10 прогнозов, потом отправляй результаты.";
+        return;
+      }
+
       const payload = {
-        direction: answer,          // "1" или "0"
-        t: tIndex,                  // индекс (всегда n)
-        y: predictedValue           // значение точки
+        phi: phi,
+        base_n: BASE_N,
+        extra_steps: EXTRA_STEPS,
+        predictions: predictions
       };
 
       Telegram.WebApp.sendData(JSON.stringify(payload));
-      // после этого мини-апп закроется по правилам Telegram
+      // после этого мини-апп закроется
     });
   </script>
 </body>
