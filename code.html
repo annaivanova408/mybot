@@ -252,7 +252,13 @@
       // в бота по-прежнему отправляем только направление (1 = вверх, 0 = вниз),
       // чтобы не ломать существующий Python-код
       const answer = up ? "1" : "0";
-      Telegram.WebApp.sendData(answer);
+      const payload = {
+        direction: answer,          // "1" или "0"
+        t: tIndex,                  // индекс (всегда n)
+        y: predictedValue           // значение точки
+      };
+
+      Telegram.WebApp.sendData(JSON.stringify(payload));
       // после этого мини-апп закроется по правилам Telegram
     });
   </script>
