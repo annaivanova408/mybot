@@ -116,7 +116,7 @@
 
   <!-- Статус / подсказки -->
   <div class="hint" id="status">
-    Пролистай график вправо и кликни в подсвеченной области, чтобы сделать первый прогноз (1 из 10).
+    Пролистай график вправо и кликни в подсвеченной полосе, чтобы сделать первый прогноз (1 из 10).
   </div>
 
   <!-- Бегунок, который синхронизирован с горизонтальным скроллом -->
@@ -253,18 +253,19 @@
       }
       ctx.stroke();
 
-      // 4.2. Подсветка области, где можно кликать:
-      // область справа от индекса (maxRealIndex + 1)
-      if (currentStep < EXTRA_STEPS && maxRealIndex < TOTAL_N - 1) {
-        const minForecastIndex = maxRealIndex + 1;
-        const regionStartX = xCoord(minForecastIndex);
+      // 4.2. Текущая зона прогноза: одна вертикальная полоса
+      if (currentStep < EXTRA_STEPS) {
+        const targetIndex = BASE_N + currentStep;  // куда делаем прогноз сейчас
+        const xTarget = xCoord(targetIndex);
+
+        const zoneWidth = 60; // ширина подсвеченной зоны (в пикселях)
 
         // Полупрозрачный прямоугольник — "зона клика"
         ctx.fillStyle = "rgba(46, 204, 113, 0.06)";
-        ctx.fillRect(regionStartX, pad, canvas.width - pad - regionStartX, H);
+        ctx.fillRect(xTarget - zoneWidth / 2, pad, zoneWidth, H);
 
-        // Сама пунктирная линия (текущее положение)
-        const defaultLineX = regionStartX;
+        // Пунктирная линия в центре зоны
+        const defaultLineX = xTarget;
         const lineX = (currentLineX !== null) ? currentLineX : defaultLineX;
 
         ctx.strokeStyle = "#2ecc71";
@@ -275,10 +276,10 @@
         ctx.stroke();
         ctx.setLineDash([]);
 
-        // подсказка рядом
+        // Подпись "кликни здесь"
         ctx.fillStyle = "#000";
         ctx.font = "14px system-ui";
-        ctx.fillText("Можно кликать здесь →", regionStartX - 130, pad + 24);
+        ctx.fillText("Выбери высоту здесь →", xTarget - 140, pad + 24);
       }
 
       // 4.3. Подпись параметра phi
@@ -381,7 +382,7 @@
     canvas.addEventListener("click", function (evt) {
       // Если все прогнозы уже сделаны — клики больше не обрабатываем
       if (currentStep >= EXTRA_STEPS) {
-        statusDiv.textContent = "Все 10 прогнозов уже сделаны. Можешь отправить результаты.";
+        statusDiv.textContent = "Все 10 прогнозов уже сделаны. Нажми «Отправить результаты».";
         return;
       }
 
@@ -390,48 +391,35 @@
       const x = evt.clientX - rect.left;
       const y = evt.clientY - rect.top;
 
-      // Минимальный индекс времени, за который можем делать прогноз сейчас:
-      // всё, что до maxRealIndex, уже «прошлое» и полностью открыто.
-      const minForecastIndex = maxRealIndex + 1;
+      // Текущий индекс времени, за который делаем прогноз (строго один шаг вперёд)
+      const targetIndex = BASE_N + currentStep;
+      const xTarget = xCoord(targetIndex);
 
-      // Если уже всё открыто — дальше прогнозировать некуда
-      if (minForecastIndex >= TOTAL_N) {
-        statusDiv.textContent = "Больше нет будущих точек для прогноза.";
+      const zoneWidth = 60;                // ширина кликабельной зоны
+      const halfZone = zoneWidth / 2;
+
+      // Проверяем, что клик произошёл в подсвеченной полосе вокруг линии
+      if (x < xTarget - halfZone || x > xTarget + halfZone) {
+        statusDiv.textContent = "Пожалуйста, кликни в зелёной полосе вокруг пунктирной линии (выбираем только высоту точки).";
         return;
       }
-
-      const regionStartX = xCoord(minForecastIndex);
-
-      // Можно кликать только в "будущее" — справа от подсвеченной области
-      if (x < regionStartX) {
-        statusDiv.textContent = "Кликни в подсвеченной области справа (там, где ещё нет реальных данных).";
-        return;
-      }
-
-      // Переводим координату X клика в индекс времени t
-      let rawIndex = Math.round((x - pad) / W * TOTAL_N);
-      // Гарантируем, что студент не может выбрать точку "в прошлом"
-      if (rawIndex < minForecastIndex) rawIndex = minForecastIndex;
-      if (rawIndex > TOTAL_N - 1) rawIndex = TOTAL_N - 1;
-
-      const tIndex = rawIndex;
 
       // Переводим координату Y клика в значение ряда (прогноз студента)
       const yPred = invYScale(y);
-      const yTrue = data[tIndex];
+      const yTrue = data[targetIndex];
 
-      // Для "рост/падение" сравниваем с предыдущей раскрытой точкой
-      const prevIndex = Math.max(0, tIndex - 1);
+      // Для "рост/падение" сравниваем с предыдущей открытой точкой
+      const prevIndex = Math.max(0, targetIndex - 1);
       const up = yPred > data[prevIndex];
 
-      // Обновляем "открытую" реальность: теперь студент видит реальные данные до tIndex
+      // Обновляем "открытую" реальность: теперь студент видит реальные данные до targetIndex
       const oldMaxRealIndex = maxRealIndex;
-      maxRealIndex = tIndex;
+      maxRealIndex = targetIndex;
 
       // Сохраняем прогноз
       predictions.push({
         step: currentStep,
-        t: tIndex,
+        t: targetIndex,
         y_pred: yPred,
         y_true: yTrue,
         up: up
@@ -439,20 +427,23 @@
 
       currentStep += 1;
 
-      // Позиция линии ДО и ПОСЛЕ (для плавного движения)
+      // Позиция линии ДО и ПОСЛЕ (идём всегда на один шаг вправо)
       const fromX = (currentLineX !== null) ? currentLineX : xCoord(oldMaxRealIndex + 1);
-      const toX   = xCoord(tIndex);
+      const toX   = xTarget;
 
       // Функция, которая обновит текстовое описание после анимации
       const nextStepText = () => {
         if (currentStep < EXTRA_STEPS) {
           statusDiv.textContent =
-            `Прогноз ${currentStep} сделан. Сейчас t = ${tIndex}, ` +
+            `Прогноз ${currentStep} сделан. Сейчас t = ${targetIndex}, ` +
             `твой y ≈ ${yPred.toFixed(2)}, истинное y ≈ ${yTrue.toFixed(2)}. ` +
-            `Сделай прогноз ${currentStep + 1} из ${EXTRA_STEPS} (кликни дальше по подсвеченной области).`;
+            `Сделай прогноз ${currentStep + 1} из ${EXTRA_STEPS} (верх/низ в следующей зелёной полосе).`;
         } else {
+          // После последнего прогноза открываем весь ряд до конца
+          maxRealIndex = TOTAL_N - 1;
+          drawSeries();
           statusDiv.textContent =
-            `Все ${EXTRA_STEPS} прогнозов сделаны. Последняя точка: t = ${tIndex}, ` +
+            `Все ${EXTRA_STEPS} прогнозов сделаны. Последняя точка: t = ${targetIndex}, ` +
             `твой y ≈ ${yPred.toFixed(2)}, истинное y ≈ ${yTrue.toFixed(2)}. ` +
             `Теперь нажми «Отправить результаты».`;
           sendBtn.disabled = false;
@@ -460,7 +451,7 @@
         }
       };
 
-      // Запускаем анимацию движения линии и одновременного раскрытия "реального" графика
+      // Запускаем анимацию движения линии
       animateLine(fromX, toX, 250, nextStepText);
     });
 
